@@ -398,12 +398,67 @@ function dataURLToBytes(url) {
 }
 
 // ============ Wire up ============
+async function loadModelFromURL(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    S.glb = parseGLB(buf);
+    S.glb.name = url.split('/').pop() || 'model.glb';
+    await extractTextures(S.glb);
+    loadModelToThree(S.glb);
+    document.getElementById('btn-export').disabled = false;
+    if (S.textures.length) selectTexture(S.textures[0].index);
+  } catch (e) {
+    alert('Failed to load from URL: ' + e.message);
+  }
+}
+async function loadBrowseList() {
+  const el = document.getElementById('browse-list');
+  el.innerHTML = '<div style="color:#6b7280">Loading…</div>';
+  // Try to fetch a model manifest from the repo
+  // Supports: ?models=<url> query param, or local models.json
+  const params = new URLSearchParams(location.search);
+  const manifestURL = params.get('models') || 'models.json';
+  try {
+    const res = await fetch(manifestURL);
+    if (!res.ok) throw new Error('no manifest');
+    const list = await res.json();
+    el.innerHTML = '';
+    list.forEach((m) => {
+      const d = document.createElement('div');
+      d.className = 'browse-item';
+      d.textContent = m.name || m.url;
+      d.onclick = async () => {
+        await loadModelFromURL(m.url);
+        document.getElementById('modal-browse').hidden = true;
+      };
+      el.appendChild(d);
+    });
+    if (!list.length) el.innerHTML = '<div style="color:#6b7280">No models listed. Paste a URL above.</div>';
+  } catch (e) {
+    el.innerHTML = '<div style="color:#6b7280">No model list found. Paste a GLB URL above.<br><br>Tip: host your <b>models.json</b> next to this app:<br><code>[{\"name\":\"Sombra\",\"url\":\"https://…/SOMBRA.glb\"}]</code></div>';
+  }
+}
 window.addEventListener('DOMContentLoaded', () => {
   initThree();
   setupGestures();
   const fm = document.getElementById('file-model');
   const fi = document.getElementById('file-image');
   document.getElementById('btn-load').onclick = () => fm.click();
+  document.getElementById('btn-browse').onclick = () => {
+    document.getElementById('modal-browse').hidden = false;
+    loadBrowseList();
+  };
+  document.getElementById('btn-browse-close').onclick = () => {
+    document.getElementById('modal-browse').hidden = true;
+  };
+  document.getElementById('btn-load-url').onclick = async () => {
+    const url = document.getElementById('browse-url').value.trim();
+    if (!url) return;
+    await loadModelFromURL(url);
+    document.getElementById('modal-browse').hidden = true;
+  };
   fm.onchange = async () => {
     const f = fm.files[0];
     if (!f) return;
